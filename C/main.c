@@ -3,7 +3,18 @@
 #include <stdint.h>
 
 //Funciones implementadas en x86
-extern float prom_avx2(float *arr, int n);
+extern float arr_sum_avx2(float *arr, int n);
+
+extern void compute_stats_avx2(
+    float *arr,
+    int n,
+    float sum,
+    float *mean,
+    float *var,
+    float *stddev,
+    float *min,
+    float *max
+);
 
 //Variable para alinear el array a 32 bytes
 #define ALIGNMENT 32
@@ -82,14 +93,30 @@ int main(int argc, char *argv[])
     printf("Cantidad de elementos: %d\n", n);
     printf("Direccion del array: %p\n", (void *)arr);
 
-    printf("\nPrimeros elementos:\n");
+    printf("\nElementos:\n");
 
     for (int i = 0; i < n; i++) {
         printf("arr[%d] = %f\n", i, arr[i]);
     }
 
-    float promedio = prom_avx2(arr, n);
-    printf("Promedio: %f\n", promedio);
+    //llamada de las funciones del kernel vectorial y muestrar datos
+    float sum_avx2 = arr_sum_avx2(arr, n);
+    float mean_avx2;
+    float var_avx2;
+    float estdev_avx2;
+    float min_avx2;
+    float max_avx2;
+
+    compute_stats_avx2(arr, n, sum_avx2, &mean_avx2, &var_avx2,&estdev_avx2, &min_avx2, &max_avx2);
+    printf("Este segmento muestra los datos estadisticos con el kernel avx2 \n");
+    printf("Cantidad datos: %d\n", n);
+    printf("Suma: %f\n", sum_avx2);
+    printf("Promedio: %f\n", mean_avx2);
+    printf("Varianza: %f\n", var_avx2);
+    printf("Desviacion estandar: %f\n", estdev_avx2);
+    printf("Minimo: %f\n", min_avx2);
+    printf("Maximo: %f\n", max_avx2);
+    printf("----------------------------------------------------------------------");
 
     
     free(arr); //Libera la memoria del array, dejarlo al final del programa para no desperdiciar memoria

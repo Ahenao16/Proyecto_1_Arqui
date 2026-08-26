@@ -1,7 +1,9 @@
-global prom_avx2
+global arr_sum_avx2
+global compute_stats_avx2
 section .text
 
-prom_avx2:
+;funcion para obtener la suma del arreglo
+arr_sum_avx2:
     mov eax, esi    ; EAX = n (cantidad de numeros)
     xor edx, edx    ; EDX = 0  se limpia edx
     mov ecx, 8      ; divisor = 8
@@ -34,7 +36,7 @@ prom_avx2:
         vhaddps xmm1, xmm1, xmm1 ;suma horizontal 2 xmm1=[A+E+B+F+C+G+D+H,0,0,0] 
 
         cmp edx,0 ;verifico si existe sobrante, de lo contrario termino
-        je .prom
+        je .ret_arr_sum
 
     .remainder_sum:
         vaddss xmm1, xmm1, [rdi] ;sumo el residuo a xmm1[0]
@@ -43,8 +45,30 @@ prom_avx2:
         cmp r9d, edx ; si igualo la cantidad de numeros sobrantes totales termino
         jne .remainder_sum
 
-    .prom:
-    cvtsi2ss xmm2, esi ;convierto n a un float para poder operar
-    vdivss xmm0, xmm1, xmm2 ;divido la suma total entre n
-    vzeroupper ;pone en cero la parte alta de los registros YMM.
-    ret
+    .ret_arr_sum:
+        vmovaps xmm0, xmm1 ;pasamos el dato al registro de retorno
+        vzeroupper ;pone en cero la parte alta de los registros YMM.
+        ret ;retorna el dato en xmm0 por defecto
+
+
+
+;funcion para el calculo de las distintas estadisticas
+compute_stats_avx2:
+; Teniendo en cuenta el orden de los argumentos de la funcion y el System V AMD64 ABI. Los datos se guardan en los registros
+; RDI  = arr
+; RSI  = n (o bien esi, parte baja del registro)
+; XMM0 = arr_sum
+; RDX  = &mean
+; RCX  = &var
+; R8   = &stddev
+; R9   = &min
+; stack = &max; 
+    .mean:
+        cvtsi2ss xmm1, esi ;convierto n a un float para poder operar
+        vdivss xmm0, xmm0, xmm1 ;divido la suma total entre n
+        vmovss [rdx], xmm0 ;
+        ret
+
+
+
+   
