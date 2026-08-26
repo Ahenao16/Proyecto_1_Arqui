@@ -3,6 +3,7 @@ driver: \
   /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o \
   /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o \
   CMakeFiles/driver.dir/main.c.o \
+  CMakeFiles/driver.dir/kernel_avx2.asm.o \
   /usr/lib/gcc/x86_64-linux-gnu/15/libgcc.a \
   /usr/lib/gcc/x86_64-linux-gnu/15/libgcc_s.so \
   /usr/lib/gcc/x86_64-linux-gnu/15/libgcc_s.so \
@@ -32,6 +33,8 @@ driver: \
 /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o:
 
 CMakeFiles/driver.dir/main.c.o:
+
+CMakeFiles/driver.dir/kernel_avx2.asm.o:
 
 /usr/lib/gcc/x86_64-linux-gnu/15/libgcc.a:
 

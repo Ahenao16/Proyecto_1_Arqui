@@ -1,1 +1,1 @@
-/usr/bin/cc -Wl,--dependency-file=CMakeFiles/driver.dir/link.d CMakeFiles/driver.dir/main.c.o -o driver
+/usr/bin/cc -Wl,--dependency-file=CMakeFiles/driver.dir/link.d CMakeFiles/driver.dir/main.c.o CMakeFiles/driver.dir/kernel_avx2.asm.o -o driver

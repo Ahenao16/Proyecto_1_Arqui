@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+//Funciones implementadas en x86
+extern float prom_avx2(float *arr, int n);
+
 //Variable para alinear el array a 32 bytes
 #define ALIGNMENT 32
 
@@ -85,6 +88,10 @@ int main(int argc, char *argv[])
         printf("arr[%d] = %f\n", i, arr[i]);
     }
 
+    float promedio = prom_avx2(arr, n);
+    printf("Promedio: %f\n", promedio);
+
+    
     free(arr); //Libera la memoria del array, dejarlo al final del programa para no desperdiciar memoria
 
     return EXIT_SUCCESS;

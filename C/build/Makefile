@@ -136,6 +136,14 @@ driver/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/driver.dir/build.make CMakeFiles/driver.dir/build
 .PHONY : driver/fast
 
+kernel_avx2.o: kernel_avx2.asm.o
+.PHONY : kernel_avx2.o
+
+# target to build an object file
+kernel_avx2.asm.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/driver.dir/build.make CMakeFiles/driver.dir/kernel_avx2.asm.o
+.PHONY : kernel_avx2.asm.o
+
 main.o: main.c.o
 .PHONY : main.o
 
@@ -170,6 +178,7 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... driver"
+	@echo "... kernel_avx2.o"
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
