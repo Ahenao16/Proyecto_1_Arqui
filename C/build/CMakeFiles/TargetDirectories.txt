@@ -1,0 +1,3 @@
+/home/alejandro-henao/Proyecto_1_Arqui/C/build/CMakeFiles/driver.dir
+/home/alejandro-henao/Proyecto_1_Arqui/C/build/CMakeFiles/edit_cache.dir
+/home/alejandro-henao/Proyecto_1_Arqui/C/build/CMakeFiles/rebuild_cache.dir

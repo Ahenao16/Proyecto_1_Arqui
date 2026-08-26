@@ -1,0 +1,1 @@
+/usr/bin/cc -Wl,--dependency-file=CMakeFiles/C.dir/link.d CMakeFiles/C.dir/main.c.o -o C
