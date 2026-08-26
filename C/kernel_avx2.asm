@@ -47,7 +47,6 @@ arr_sum_avx2:
 
     .ret_arr_sum:
         vmovaps xmm0, xmm1 ;pasamos el dato al registro de retorno
-        vzeroupper ;pone en cero la parte alta de los registros YMM.
         ret ;retorna el dato en xmm0 por defecto
 
 
@@ -55,7 +54,7 @@ arr_sum_avx2:
 ;funcion para el calculo de las distintas estadisticas
 compute_stats_avx2:
 ; Teniendo en cuenta el orden de los argumentos de la funcion y el System V AMD64 ABI. Los datos se guardan en los registros
-; RDI  = arr
+; RDI  = direccion arr 
 ; RSI  = n (o bien esi, parte baja del registro)
 ; XMM0 = arr_sum
 ; RDX  = &mean
@@ -63,11 +62,95 @@ compute_stats_avx2:
 ; R8   = &stddev
 ; R9   = &min
 ; stack = &max; 
+
+    .stack_pointer_save: ;se agrega para evitar el segmentation fault existente al modificar los registros de los punteros
+    sub rsp, 40 ; se reservan 40 Bytes del stack
+    mov [rsp+0], rdx        ; [rsp+0]  = &mean
+    mov [rsp+8], rcx        ; [rsp+8]  = &var
+    mov [rsp+16], r8        ; [rsp+16] = &stddev
+    mov [rsp+24], r9        ; [rsp+24] = &min 
+
+
+    mov rax, [rsp+48] ;originalmente estaba el max en la dir +8 del stack se debe correr 40 posiciones
+    mov [rsp+32], rax       ; [rsp+32] = &max
+
+
     .mean:
         cvtsi2ss xmm1, esi ;convierto n a un float para poder operar
         vdivss xmm0, xmm0, xmm1 ;divido la suma total entre n
-        vmovss [rdx], xmm0 ;
+
+        mov rax, [rsp+0]        ; Carga en RAX la dirección donde está almacenada la variable mean.
+        vmovss [rax], xmm0     ; Pone xmm0 en el contenido de la direccion a la que apunta rax
+
+    .variance:
+        .set_up:
+        vxorps ymm1, ymm1, ymm1 ;Acumulador para el calculo del termino cuadratico vectorialmente, tambien limpia xmm1
+
+        mov eax, esi    
+        xor edx, edx    
+        mov ecx, 8      
+        div ecx  ; calculamos catidad de bloques (eax) y sobrantes (edx)
+
+        mov r10d, 0
+        mov r11d, 0 ;contadores en cero
+        cmp eax,0
+        je .quadratic_term_remainder ;si no se deben ejecutar bloques n<8 de una vez se procesa solo el sobrante
+        
+
+        vbroadcastss ymm4, xmm0 ;llenamos todo el vector con el promedio para el calculo
+        .quadratic_term_vectorial:
+        vmovaps ymm2, [rdi] ;cargamos 8 numeros
+        vsubps ymm3, ymm2, ymm4 ;restamos xi-u
+        vmulps ymm2, ymm3, ymm3 ;elevamos al cuadrado
+        vaddps ymm1, ymm1, ymm2
+
+        add r10d, 1 ;sumo 1 al contador de bloques
+        add rdi, 32 ;voy al siguiente bloque del array 
+        
+        cmp r10d, eax ; si no igualo la cantidad de bloques totales sigo reduciendo
+        jne .quadratic_term_vectorial
+
+        .horizontal_sum:
+        vextractf128 xmm1, ymm1, 1 ;extraigo la parte alta de ymm1
+        vextractf128 xmm2, ymm1, 0 ;extraigo la parte baja de ymm1
+        vaddps xmm1, xmm1, xmm2
+        vhaddps xmm1, xmm1, xmm1
+        vhaddps xmm1, xmm1,xmm1  ; xmm1 = [(A-u)^2 + (B-u)^2 + ...,0,0,0]
+        vxorps xmm2, xmm2, xmm2 ;se limpia el registro xmm2 para las operaciones con el residuo
+
+        cmp edx,0
+        je .variance_calculation ;si no hay residuo termine el calculo solo con la reduccion
+
+        .quadratic_term_remainder:
+        vmovss xmm3, [rdi]       ; XMM3 = xi
+        vsubss xmm2, xmm3, xmm0 ;dato individual - media
+        vmulss xmm2,xmm2,xmm2 ;elevo cuadrado
+        vaddss xmm1, xmm1, xmm2
+
+        add r11d, 1 ;sumo 1 al contador de bloques
+        add rdi, 4 ;voy al siguiente numero del array 
+
+        cmp r11d, edx
+        jne .quadratic_term_remainder
+
+        .variance_calculation:
+        cvtsi2ss xmm4, esi ;convierto n a un float para poder operar en xmm4
+        vdivss xmm1, xmm1, xmm4 ;divido la suma total entre n
+
+        mov rax, [rsp+8]       ; Carga en RAX la dirección donde está almacenada la variable var.
+        vmovss [rax], xmm1     ; Guarda el valor float de xmm1 en la dirección apuntada por RAX.
+        
+    
+    .stddev:
+        vsqrtss xmm1,xmm1, xmm1
+        mov rax, [rsp+16]       ; Carga en RAX la dirección donde está almacenada la variable var.
+        vmovss [rax], xmm1     ; Guarda el valor float de xmm1 en la dirección apuntada por RAX.
+
+
+    .rsp_original_position_return:
+        add rsp, 40 ;Se devuelve rsp a la posicion original para evitar el segmentation fault
         ret
+        
 
 
 
