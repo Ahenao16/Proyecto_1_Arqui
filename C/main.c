@@ -89,10 +89,6 @@ int main(int argc, char *argv[])
     fclose(file);
 
     //Esta es una seccion de verificacion para imprimir en consola, probablemente luego se elimine
-    printf("Archivo: %s\n", filename);
-    printf("Cantidad de elementos: %d\n", n);
-    printf("Direccion del array: %p\n", (void *)arr);
-
     printf("\nElementos:\n");
 
     for (int i = 0; i < n; i++) {
