@@ -16,6 +16,14 @@ extern void compute_stats_avx2(
     float *max
 );
 
+extern void normalize_array_avx2(
+    float *in,
+    float *out,
+    int n,
+    float mean,
+    float stddev
+);
+
 //Variable para alinear el array a 32 bytes
 #define ALIGNMENT 32
 
@@ -65,8 +73,9 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    // se declara un puntero que apunta a floats
+    // se declara un puntero que apunta a floats para la reservade memoria
     float *arr;
+    float *normalized_arr;
 
     //alineamiento de memoria en ram. posix_memalign recibe en orden: direccion donde se guarda el puntero, alineamiento y cantidad de bytes
     if (posix_memalign(
@@ -77,6 +86,18 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error reservando memoria.\n");
         fclose(file);
         return EXIT_FAILURE;
+    }
+
+    //Se reserva memoria alineada para guardar el arreglo normalizado
+    if (posix_memalign(
+        (void **)&normalized_arr,
+        ALIGNMENT,
+        n * sizeof(float)) != 0) {
+
+    fprintf(stderr, "Error reservando memoria para el arreglo normalizado.\n");
+    free(arr);
+    fclose(file);
+    return EXIT_FAILURE;
     }
 
     //regresamos al principio del archivo
@@ -104,6 +125,11 @@ int main(int argc, char *argv[])
     float max_avx2;
 
     compute_stats_avx2(arr, n, sum_avx2, &mean_avx2, &var_avx2,&estdev_avx2, &min_avx2, &max_avx2);
+
+
+
+    normalize_array_avx2(arr, normalized_arr, n, mean_avx2, estdev_avx2);
+
     printf("Este segmento muestra los datos estadisticos con el kernel avx2 \n");
     printf("Cantidad datos: %d\n", n);
     printf("Suma: %f\n", sum_avx2);
@@ -114,8 +140,25 @@ int main(int argc, char *argv[])
     printf("Maximo: %f\n", max_avx2);
     printf("----------------------------------------------------------------------");
 
+    //se crea el archivo de salida con avx2
+    FILE *output_file = fopen("normalizado_avx2.dat", "w");
+
+    if (output_file == NULL) {
+    perror("Error al crear el archivo normalizado_avx2.dat");
+    free(arr);
+    free(normalized_arr);
+    return EXIT_FAILURE;
+    }
+
+    for (int i = 0; i < n; i++) {
+    fprintf(output_file, "%f\n", normalized_arr[i]);
+    }
+    
+    fclose(output_file);
+
     
     free(arr); //Libera la memoria del array, dejarlo al final del programa para no desperdiciar memoria
+    free(normalized_arr);
 
     return EXIT_SUCCESS;
 }

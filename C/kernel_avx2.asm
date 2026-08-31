@@ -1,5 +1,6 @@
 global arr_sum_avx2
 global compute_stats_avx2
+global normalize_array_avx2
 section .text
 
 ;funcion para obtener la suma del arreglo
@@ -7,7 +8,7 @@ arr_sum_avx2:
     mov eax, esi    ; EAX = n (cantidad de numeros)
     xor edx, edx    ; EDX = 0  se limpia edx
     mov ecx, 8      ; divisor = 8
-    div ecx  ; para dividir se realiza la division como eax = [edx:ecx]//eax cociente edx = [edx:ecx] mod eax residuo
+    div ecx  ; para dividir se realiza la division como eax = [edx:eax] // ecx (cociente) y edx = [edx:eax] mod ecx (residuo)
 
     mov r8d, 0 ;limpiamos los valores de registros 8 y 9 que seran usados como contadores 
     mov r9d, 0 ;R8 = contador bloques, R9 = contador sobrante
@@ -47,6 +48,7 @@ arr_sum_avx2:
 
     .ret_arr_sum:
         vmovaps xmm0, xmm1 ;pasamos el dato al registro de retorno
+        vzeroupper
         ret ;retorna el dato en xmm0 por defecto
 
 
@@ -295,8 +297,101 @@ compute_stats_avx2:
 
     .rsp_original_position_return:
         add rsp, 40 ;Se devuelve rsp a la posicion original para evitar el segmentation fault
+        vzeroupper
         ret
         
+
+normalize_array_avx2:
+;rdi = in, rsi = out, edx = n, xmm0 = mean, xmm1 = stddev
+;Caso borde: si stddev == 0.0, copie in[i] en out[i] tal cual.
+;   out[i] = (in[i] - mean) / stddev
+    .set_up: ;Se cargan en registros la media, stddev (precarga de valores) y se calcula la cantidad de bloques y residuo, se reinician contadores
+        mov eax, edx    
+        xor edx, edx    
+        mov ecx, 8      
+        div ecx    ; eax = [edx:eax] // ecx  y edx = [edx:eax] mod ecx 
+        mov r8d, 0 ;contador bloque
+        mov r9d, 0 ;contador residuo
+
+    .stddev_eqz:
+    vxorps xmm4, xmm4, xmm4     
+    vucomiss xmm1, xmm4         ; stddev=0?
+    je .write_values_border_case      
+
+
+    .block_eqz:
+    cmp eax, 0
+    je .normalize_remainder
+
+
+    .normalize_blocks:
+    vbroadcastss ymm2, xmm0 ;ymm2 buffer con medias
+    vbroadcastss ymm3, xmm1 ;ymm3 buffer con stdevs
+    vmovaps ymm5, [rdi] ;ymm5 acumulador resultados
+    vsubps ymm5, ymm5, ymm2
+    vdivps ymm5, ymm5, ymm3 ;operacion
+    vmovaps [rsi], ymm5
+
+    add rdi, 32
+    add rsi, 32
+    add r8d, 1
+    cmp r8d, eax
+    jne .normalize_blocks
+
+    .remainder_eqz:
+    cmp edx, 0
+    je .end
+
+    .normalize_remainder:
+    vmovss xmm5, [rdi]          ; cargo in[i]
+    vsubss xmm5, xmm5, xmm0 
+    vdivss xmm5, xmm5,xmm1
+    vmovss [rsi], xmm5          ; guardo in[i] en out[i]
+    add rdi, 4                  
+    add rsi, 4                  
+    add r9d, 1                 
+    cmp r9d, edx              
+    jne .normalize_remainder
+    jmp .end
+    
+    .write_values_border_case:
+        cmp eax, 0
+        je .reminder_loop_bc
+
+        .block_loop_bc:
+        vmovaps ymm5, [rdi]
+        vmovaps [rsi], ymm5
+        add rdi, 32
+        add rsi, 32
+        add r8d, 1
+        cmp r8d, eax
+        jne .block_loop_bc
+
+        .reminder_loop_bc:
+        cmp edx, 0
+        je .end
+
+        vmovss xmm5, [rdi]          ; cargo in[i]
+        vmovss [rsi], xmm5         ; guardo in[i] en out[i]
+        add rdi, 4                  
+        add rsi, 4                  
+        add r9d, 1                 
+        cmp r9d, edx              
+        jne .reminder_loop_bc
+
+    .end:
+    vzeroupper
+    ret
+    
+    
+    
+
+
+    
+
+    
+    
+
 
 
 
