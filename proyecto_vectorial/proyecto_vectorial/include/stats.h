@@ -1,3 +1,9 @@
+/*Para qué sirve: es el archivo de cabecera de C que declara las firmas de las tres funciones que vas a escribir en ensamblador:
+Es el "contrato" entre el mundo C (driver.c) y el ensamblador (.asm). El compilador de C lee este .h para saber cómo llamar a
+funciones que no están escritas en C — confía en que en algún .o va a existir una función con ese nombre, esos parámetros y esa convención de llamada.
+*/
+
+
 #ifndef STATS_H
 #define STATS_H
 
