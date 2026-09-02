@@ -1,0 +1,164 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+//Funciones implementadas en x86
+extern float arr_sum_avx2(float *arr, int n);
+
+extern void compute_stats_avx2(
+    float *arr,
+    int n,
+    float sum,
+    float *mean,
+    float *var,
+    float *stddev,
+    float *min,
+    float *max
+);
+
+extern void normalize_array_avx2(
+    float *in,
+    float *out,
+    int n,
+    float mean,
+    float stddev
+);
+
+//Variable para alinear el array a 32 bytes
+#define ALIGNMENT 32
+
+//El programa recibe como argumentos el nombre del programa y el archivo .dat que sera analizado
+int main(int argc, char *argv[])
+{
+    //Se verifica que el conteo de argumentos argc sea = 2 para verificar que se colocara la dir del archivo .dat
+    //de lo contrario se genera una excepcion y se muestra la manera correcta de ejecutar
+    if (argc != 2) {
+        fprintf(stderr, "Para ejecutar: %s numeros.dat\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    //Se guarda en filename la dirección donde está almacenado el texto/nombre del .dat
+    // Se abre el file y se verifica que la apertura del archivo no fallara
+    const char *filename = argv[1];
+
+    FILE *file = fopen(filename, "r");
+
+    if (file == NULL) {
+        perror("Error al abrir el archivo");
+        return EXIT_FAILURE;
+    }
+
+    // Se cuenta la cantidad de datos del archivo. Se comprueba si los datos son floats
+    int n = 0;
+    float temp;
+
+    while (1) {
+        int result = fscanf(file, "%f", &temp); //si los numeros son floats fscanf devuelve un 1
+
+        if (result == 1) {
+            n++;
+        } else if (result == EOF) { //si se termino el file termina de verificar
+            break;
+        } else {
+            fprintf(stderr, "Error: el archivo contiene un valor que no es un numero.\n");
+            fclose(file);
+            return EXIT_FAILURE;
+        }
+    }
+
+    // Se verifica si el archivo no esta vacio
+    if (n == 0) {
+        fprintf(stderr, "El archivo no contiene datos.\n");
+        fclose(file);
+        return EXIT_FAILURE;
+    }
+
+    // se declara un puntero que apunta a floats para la reservade memoria
+    float *arr;
+    float *normalized_arr;
+
+    //alineamiento de memoria en ram. posix_memalign recibe en orden: direccion donde se guarda el puntero, alineamiento y cantidad de bytes
+    if (posix_memalign(
+            (void **)&arr, //Obtiene la dirección de arr y la convierte al tipo void** que espera posix_memalign, para que esta pueda guardar en arr la dirección de la memoria reservada.
+            ALIGNMENT, //Se quiere que la posicion de memoria sea multiplo de 32 porque AVX2 utiliza registros YMM de 256 bits (256/8)
+            n * sizeof(float)) != 0) {
+
+        fprintf(stderr, "Error reservando memoria.\n");
+        fclose(file);
+        return EXIT_FAILURE;
+    }
+
+    //Se reserva memoria alineada para guardar el arreglo normalizado
+    if (posix_memalign(
+        (void **)&normalized_arr,
+        ALIGNMENT,
+        n * sizeof(float)) != 0) {
+
+    fprintf(stderr, "Error reservando memoria para el arreglo normalizado.\n");
+    free(arr);
+    fclose(file);
+    return EXIT_FAILURE;
+    }
+
+    //regresamos al principio del archivo
+    rewind(file);
+
+    //Se guardan los datos en el array creado luego de reservar el espacio.
+    for (int i = 0; i < n; i++) {
+        fscanf(file, "%f", &arr[i]);
+    }
+    fclose(file);
+
+    //Esta es una seccion de verificacion para imprimir en consola, probablemente luego se elimine
+    printf("\nElementos:\n");
+
+    for (int i = 0; i < n; i++) {
+        printf("arr[%d] = %f\n", i, arr[i]);
+    }
+
+    //llamada de las funciones del kernel vectorial y muestrar datos
+    float sum_avx2 = arr_sum_avx2(arr, n);
+    float mean_avx2;
+    float var_avx2;
+    float estdev_avx2;
+    float min_avx2;
+    float max_avx2;
+
+    compute_stats_avx2(arr, n, sum_avx2, &mean_avx2, &var_avx2,&estdev_avx2, &min_avx2, &max_avx2);
+
+
+
+    normalize_array_avx2(arr, normalized_arr, n, mean_avx2, estdev_avx2);
+
+    printf("Este segmento muestra los datos estadisticos con el kernel avx2 \n");
+    printf("Cantidad datos: %d\n", n);
+    printf("Suma: %f\n", sum_avx2);
+    printf("Promedio: %f\n", mean_avx2);
+    printf("Varianza: %f\n", var_avx2);
+    printf("Desviacion estandar: %f\n", estdev_avx2);
+    printf("Minimo: %f\n", min_avx2);
+    printf("Maximo: %f\n", max_avx2);
+    printf("----------------------------------------------------------------------");
+
+    //se crea el archivo de salida con avx2
+    FILE *output_file = fopen("normalizado_avx2.dat", "w");
+
+    if (output_file == NULL) {
+    perror("Error al crear el archivo normalizado_avx2.dat");
+    free(arr);
+    free(normalized_arr);
+    return EXIT_FAILURE;
+    }
+
+    for (int i = 0; i < n; i++) {
+    fprintf(output_file, "%f\n", normalized_arr[i]);
+    }
+    
+    fclose(output_file);
+
+    
+    free(arr); //Libera la memoria del array, dejarlo al final del programa para no desperdiciar memoria
+    free(normalized_arr);
+
+    return EXIT_SUCCESS;
+}
