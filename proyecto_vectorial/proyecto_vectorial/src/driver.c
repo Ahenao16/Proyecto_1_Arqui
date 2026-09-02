@@ -1,3 +1,17 @@
+/*Driver: programa principal
+Para que sirve:
+1. leer input .dat (parsiar el int32 N + los N floats)
+2. Reservar memoria alineada a 32  bytes con aligned_alloc(32, ...) (fundamental para que tu versión AVX2 pueda usar vmovaps).
+3. Medir el tiempo con clock_gettime(CLOCK_MONOTONIC, ...) alrededor de las llamadas a tus funciones de ensamblador.
+4. Llamar, en este orden: sum_array() → compute_stats() → normalize_array().
+5. Imprimir los resultados en consola y escribir output.dat + un resumen en texto plano (.stats.txt).
+En resumen: es el cerebro, ya que ejecuta las rutinas de ensamblador y ejecuta los resultados
+*/
+/*Este archivo es el que hace sum = sum_array(in, n); — es decir, es el que va a invocar tu código ensamblador. Por eso el enunciado dice que la arquitectura es
+ "híbrida": la parte de E/S y timing la hacen en C (para no perder tiempo con syscalls en asm), y solo el cómputo puro va en ensamblador.*/
+
+
+/*librerias a usar en el codigo*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
