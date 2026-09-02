@@ -23,17 +23,29 @@ extern "C" {
  *
  * sum_array:
  *   rdi = arr, esi = n              -> retorna la suma en xmm0
- *
+ * registro rdi = arr: recibe en el registro de 64 bits el puntero del arreglo de entrada (arr)
+   esi = n: recibe en el registro de 32 bits el numero de elementos (n) que contiene el arreglo
+   retorna la suma en xmm0: devuelte el resultado flotante acumulado en el registro del puntero flotante xmm0
+
  * compute_stats:
  *   rdi = arr, esi = n, rdx = mean*, rcx = var*, r8 = min*, r9 = max*
  *   (var = varianza POBLACIONAL: var = sum((x - mean)^2) / n)
  *   Caso borde: si n == 0, escriba 0.0 en mean/var/min/max.
+     rdx = var*, r8= min*, r9= max*: punteros de memoria donde la subrutina debe escribir los resultados calculados, 
+     media, varianza poblacional, valor minimo y valor maximo ademas el caso borde
  *
  * normalize_array:
  *   rdi = in, rsi = out, edx = n, xmm0 = mean, xmm1 = stddev
  *   out[i] = (in[i] - mean) / stddev
  *   Caso borde: si stddev == 0.0, copie in[i] en out[i] tal cual
- *   (evite division por cero).
+ *   (evite division por cero)
+ rdi = in: Puntero al arreglo de entrada original.
+ rsi = out: Puntero al arreglo de salida donde se guardarán los datos normalizados.
+ edx = n: Tamaño del arreglo.
+ xmm0 = mean: Valor de la media ya calculado que se pasa como argumento de entrada en punto flotante.
+ xmm1 = stddev: Valor de la desviación estándar de entrada.
+
+
  */
 
 float sum_array(const float *arr, int n);
