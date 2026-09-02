@@ -2,3 +2,9 @@ obj/
 bin/
 data/*.dat
 data/*.stats.txt
+
+#archivos tipo objeto
+*.o
+
+#archivos tipo ejecutable
+*.exe
