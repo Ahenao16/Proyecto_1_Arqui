@@ -1,136 +1,405 @@
-; =============================================================
-; stats_vector.asm
-; Version VECTORIZADA (AVX2, 8 floats por iteracion) de los
-; kernels de computo. Misma ABI que la version escalar.
-;
-; Antes de compilar/ejecutar en su maquina, confirme soporte AVX2:
-;   lscpu | grep avx2
-;   cat /proc/cpuinfo | grep avx2
-; =============================================================
-
     global sum_array
     global compute_stats
     global normalize_array
-
     section .text
 
-; ---------------------------------------------------------------
-; float sum_array(const float *arr, int n)
-;   rdi = arr, esi = n -> retorna la suma en xmm0
-;
-; IMPLEMENTADA COMO EJEMPLO. Fijense especialmente en:
-;   (1) como se calcula cuantos elementos entran en bucles de 8
-;       ("and ecx, ~7" redondea n hacia abajo al multiplo de 8),
-;   (2) la REDUCCION HORIZONTAL para pasar de 8 sumas parciales
-;       (un YMM) a un unico escalar,
-;   (3) el BUCLE ESCALAR DE CIERRE para el remanente (n % 8 != 0).
-; Reutilicen este mismo patron en compute_stats y normalize_array.
-; ---------------------------------------------------------------
+;funcion para obtener la suma del arreglo
 sum_array:
-    xor     eax, eax               ; eax = i = 0
-    vxorps  ymm0, ymm0, ymm0       ; ymm0 = acumulador vectorial (8 carriles) = 0
+    mov eax, esi    ; EAX = n (cantidad de numeros)
+    xor edx, edx    ; EDX = 0  se limpia edx
+    mov ecx, 8      ; divisor = 8
+    div ecx  ; para dividir se realiza la division como eax = [edx:eax] // ecx (cociente) y edx = [edx:eax] mod ecx (residuo)
 
-    mov     ecx, esi
-    and     ecx, ~7                ; ecx = n redondeado hacia abajo, multiplo de 8
-    test    ecx, ecx
-    jle     .sum_reduce
+    mov r8d, 0 ;limpiamos los valores de registros 8 y 9 que seran usados como contadores 
+    mov r9d, 0 ;R8 = contador bloques, R9 = contador sobrante
 
-.sum_vec_loop:
-    cmp     eax, ecx
-    jge     .sum_reduce
-    vmovups ymm1, [rdi + rax*4]    ; carga 8 floats (unaligned: siempre valido)
-    vaddps  ymm0, ymm0, ymm1       ; acumula por carril
-    add     eax, 8
-    jmp     .sum_vec_loop
+    vxorps ymm0, ymm0, ymm0 ;se colocan todos los valores del registro ymm0 de 256bits en cero (acumulador)
+    vxorps xmm1, xmm1, xmm1; se inicializa el otro acumulador para el caso de reiduos en cero
 
-.sum_reduce:
-    ; --- reduccion horizontal: 8 carriles de ymm0 -> un escalar ---
-    vextractf128 xmm2, ymm0, 1     ; xmm2 = mitad alta (carriles 4-7)
-    vaddps  xmm0, xmm0, xmm2       ; xmm0 = 4 sumas parciales (carriles 0-3 + 4-7)
-    vhaddps xmm0, xmm0, xmm0       ; suma horizontal dentro de 128 bits
-    vhaddps xmm0, xmm0, xmm0       ; xmm0[0] = suma total de los 8 carriles originales
+    cmp eax,0
+    je .remainder_sum ;si no se deben ejecutar bloques n<8 de una vez se procesa solo el sobrante
 
-.sum_scalar_tail:
-    ; --- elementos sobrantes (n % 8), uno a la vez ---
-    cmp     eax, esi
-    jge     .sum_done
-    vmovss  xmm1, [rdi + rax*4]
-    vaddss  xmm0, xmm0, xmm1
-    inc     eax
-    jmp     .sum_scalar_tail
+    .vector_sum:
+        vmovaps ymm1, [rdi] ;se cargan 8 floats (32bytes). rdi contiene en este momento la direccion inicial del array en memoria 
+        vaddps ymm0, ymm0, ymm1 ;sumo el bloque en ymm1 en el acumulador ymm0
 
-.sum_done:
-    vzeroupper                     ; evita penalizacion de transicion AVX/SSE
-    ret
+        add r8d, 1 ;sumo 1 al contador de bloques
+        add rdi, 32 ;voy al siguiente bloque del array 
+        cmp r8d, eax ; si igualo la cantidad de bloques totales salto a procesar el residuo
+        jne .vector_sum
 
-; ---------------------------------------------------------------
-; void compute_stats(const float *arr, int n,
-;                     float *mean, float *var, float *min, float *max)
-;   rdi = arr, esi = n, rdx = mean*, rcx = var*, r8 = min*, r9 = max*
-;
-; TODO (estudiante):
-;   1) mean = suma(arr) / n (puede llamar a sum_array; recuerde
-;      guardar arr/n/mean*/var*/min*/max* en registros callee-saved
-;      antes, porque la llamada destruye registros caller-saved).
-;   2) Segunda pasada VECTORIZADA para acumular sum((x-mean)^2):
-;        - "broadcast" de mean a los 8 carriles con vbroadcastss.
-;        - vsubps + vmulps (o vfmadd231ps si quieren ir mas alla)
-;          para acumular los cuadrados de las diferencias,
-;        - misma reduccion horizontal que en sum_array,
-;        - bucle escalar para el remanente (subss/mulss/addss).
-;   3) Min/max VECTORIZADOS con vminps/vmaxps a lo largo del bucle
-;      principal, reduccion final con vextractf128 + vminps/vmaxps
-;      (y shuffles si quieren reducir los 4 restantes a 1), mas
-;      bucle escalar de cierre con minss/maxss o comiss.
-;   4) Guarde los resultados en [rdx]=mean, [rcx]=var, [r8]=min,
-;      [r9]=max. Si n == 0, escriba 0.0 en los cuatro.
-;   5) 'vzeroupper' antes de cualquier 'ret' en una funcion que usa
-;      registros YMM.
-; ---------------------------------------------------------------
+    .horizontal_sum:
+        vextractf128 xmm1, ymm0, 1 ;extraigo la parte alta de ymm0
+        vextractf128 xmm2, ymm0, 0 ;extraigo la parte baja de ymm0
+
+        vaddps xmm1, xmm1, xmm2 ;sumo ambas parte en xmm1=[A+E,B+F,C+G,D+H] 
+        vhaddps xmm1, xmm1, xmm1 ;suma horizontal 1 xmm1=[A+E+B+F,C+G+D+H,0,0] 
+        vhaddps xmm1, xmm1, xmm1 ;suma horizontal 2 xmm1=[A+E+B+F+C+G+D+H,0,0,0] 
+
+    .remainder_sum:
+        cmp edx, 0;Caso borde tampoco hay sobrante, simplemente retorno si no hay sobrante o n=0
+        je .ret_arr_sum
+        vaddss xmm1, xmm1, [rdi] ;sumo el residuo a xmm1[0]
+        add r9d,1 ;sumo 1 al contador de sobrantes
+        add rdi,4 ;me muevo a la posicion del siguiente residuo (1 float)
+        cmp r9d, edx ; si igualo la cantidad de numeros sobrantes totales termino
+        jne .remainder_sum
+
+    .ret_arr_sum:
+        vmovaps xmm0, xmm1 ;pasamos el dato al registro de retorno
+        vzeroupper
+        ret ;retorna el dato en xmm0 por defecto
+
+
+
+;funcion para el calculo de las distintas estadisticas
 compute_stats:
-    push    rbx
-    push    r12
-    push    r13
-    push    r14
-    push    r15
+; Teniendo en cuenta el orden de los argumentos de la funcion y el System V AMD64 ABI. Los datos se guardan en los registros
+;RDI  = arr
+;RSI  = n
+;XMM0 = sum
+;RDX  = &mean
+;RCX  = &var
+;R8   = &min
+;R9   = &max
 
-    ; TODO: implementar el algoritmo descrito arriba.
+    .stack_pointer_save: ;se agrega para evitar el segmentation fault existente al modificar los registros de los punteros
+    sub rsp, 40 ; se reservan 40 Bytes del stack
+    mov [rsp+0], rdx        ; [rsp+0]  = &mean
+    mov [rsp+8], rcx        ; [rsp+8]  = &var
+    mov [rsp+16], r8       ; [rsp+16] = &min
+    mov [rsp+24], r9        ; [rsp+24] = &max 
+    mov [rsp+32], rdi     ; arr
 
-    ; --- placeholder temporal: elimine estas lineas al implementar ---
-    vxorps  xmm0, xmm0, xmm0
-    vmovss  [rdx], xmm0
-    vmovss  [rcx], xmm0
-    vmovss  [r8], xmm0
-    vmovss  [r9], xmm0
-    ; --- fin placeholder ---
+    cmp esi, 0 ;se revisa si n=0
+    je .neqz
 
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
+    .mean:
+        cvtsi2ss xmm1, esi ;convierto n a un float para poder operar
+        vdivss xmm0, xmm0, xmm1 ;divido la suma total entre n
+
+        mov rax, [rsp+0]        ; Carga en RAX la dirección donde está almacenada la variable mean.
+        vmovss [rax], xmm0     ; Pone xmm0 en el contenido de la direccion a la que apunta rax
+
+    .variance:
+        .set_up:
+        vxorps ymm1, ymm1, ymm1 ;Acumulador para el calculo del termino cuadratico vectorialmente, tambien limpia xmm1
+
+        mov eax, esi    
+        xor edx, edx    
+        mov ecx, 8      
+        div ecx  ; calculamos catidad de bloques (eax) y sobrantes (edx)
+
+        mov r10d, 0
+        mov r11d, 0 ;contadores en cero
+        cmp eax,0
+        je .quadratic_term_remainder ;si no se deben ejecutar bloques n<8 de una vez se procesa solo el sobrante
+        
+
+        vbroadcastss ymm4, xmm0 ;llenamos todo el vector con el promedio para el calculo
+        .quadratic_term_vectorial:
+        vmovaps ymm2, [rdi] ;cargamos 8 numeros
+        vsubps ymm3, ymm2, ymm4 ;restamos xi-u
+        vmulps ymm2, ymm3, ymm3 ;elevamos al cuadrado
+        vaddps ymm1, ymm1, ymm2
+
+        add r10d, 1 ;sumo 1 al contador de bloques
+        add rdi, 32 ;voy al siguiente bloque del array 
+        
+        cmp r10d, eax ; si no igualo la cantidad de bloques totales sigo reduciendo
+        jne .quadratic_term_vectorial
+
+        .horizontal_sum:
+        vextractf128 xmm2, ymm1, 1 ;extraigo la parte alta de ymm1
+        vextractf128 xmm3, ymm1, 0 ;extraigo la parte baja de ymm1
+        vaddps xmm1, xmm3, xmm2
+        vhaddps xmm1, xmm1, xmm1
+        vhaddps xmm1, xmm1,xmm1  ; xmm1 = [(A-u)^2 + (B-u)^2 + ...,0,0,0]
+        vxorps xmm2, xmm2, xmm2 ;se limpia el registro xmm2 para las operaciones con el residuo
+
+        cmp edx,0
+        je .variance_calculation ;si no hay residuo termine el calculo solo con la reduccion
+
+        .quadratic_term_remainder:
+        vmovss xmm3, [rdi]       ; XMM3 = xi
+        vsubss xmm2, xmm3, xmm0 ;dato individual - media
+        vmulss xmm2,xmm2,xmm2 ;elevo cuadrado
+        vaddss xmm1, xmm1, xmm2
+
+        add r11d, 1 ;sumo 1 al contador de residuo
+        add rdi, 4 ;voy al siguiente numero del array 
+
+        cmp r11d, edx
+        jne .quadratic_term_remainder
+
+        .variance_calculation:
+        cvtsi2ss xmm4, esi ;convierto n a un float para poder operar en xmm4
+        vdivss xmm1, xmm1, xmm4 ;divido la suma total entre n
+
+        mov rax, [rsp+8]       ; Carga en RAX la dirección donde está almacenada la variable var.
+        vmovss [rax], xmm1     ; Guarda el valor float de xmm1 en la dirección apuntada por RAX.
+
+    
+    .min:
+    .min_setup:
+        mov rdi, [rsp+32] ;restauro dir de memoria
+        mov eax, esi
+        xor edx, edx
+        mov ecx, 8
+        div ecx
+
+        cmp eax,0
+        je .min_remainder_no_blocks ;Si no hay bloques solo proceso residuo sin bloques
+        vmovaps ymm1, [rdi] ;Cargo los primeros 8 nums en el registro base donde almaceno comparaciones
+        mov r10d, 1 ;Ya se encuentra cargado el primer bloque (contador empieza en 1)
+        xor r11d, r11d ;contador de sobrante en cero
+        add rdi, 32 ;paso al siguiente bloque
+        cmp r10d, eax
+        je .horizontal_min ;si ya se proceso el unico bloque salto a reduccion horizontal
+
+
+    .min_vectorial:
+        vmovaps ymm2, [rdi] ;cargamos 8 numeros a otro reg
+        vminps ymm1, ymm1, ymm2 ;comparamos los 8 numeros del acumulador con los 8 nuevos
+        add r10d, 1 ;sumo 1 al contador de bloques
+        add rdi, 32 ;voy al siguiente bloque del array
+        cmp r10d, eax ;si no igualo la cantidad de bloques totales sigo comparando vectorialmente
+        jne .min_vectorial
+
+
+    .horizontal_min:
+        vextractf128 xmm2, ymm1, 1 ;extraigo la parte alta
+        vextractf128 xmm3, ymm1, 0 ;extraigo la parte baja
+        vminps xmm1, xmm2, xmm3 ;Comparo el min de parte alta y baja
+        vshufps xmm2, xmm1, xmm1, 0x4E ;Hago un shuffle para comparar los numeros con otros
+        vminps xmm1, xmm1, xmm2 ;comparo los numeros
+        vshufps xmm2, xmm1, xmm1, 0xB1 ;repito
+        vminps xmm1, xmm1, xmm2
+        ;En este punto xmm1[0] contiene el minimo de los bloques
+
+        cmp edx,0
+        je .min_return ;si no hay residuo retorno
+
+
+    .min_remainder_blocks:
+        .block_loop_min:
+            vmovss xmm2, [rdi] ;cargo un numero individual
+            vminss xmm1, xmm1, xmm2 ;comparo el numero con el minimo acumulado
+            add r11d, 1 ;sumo 1 al contador de residuo
+            add rdi, 4 ;me muevo a la posicion del siguiente residuo
+            cmp r11d, edx ;si igualo la cantidad de sobrantes termino
+            jne .block_loop_min
+
+        jmp .min_return
+
+
+    .min_remainder_no_blocks:
+        xor r11d, r11d ;contador de sobrante en cero
+        vmovss xmm1, [rdi] ;cargo el primer numero
+        add rdi, 4 ;me muevo al siguiente numero
+        add r11d, 1 ;ya se proceso el primer numero
+        .no_block_loop_min:
+            cmp r11d, edx
+            je .min_return
+            vmovss xmm2, [rdi] ;cargo el siguiente numero
+            vminss xmm1, xmm1, xmm2 ;comparo los numeros
+            add r11d, 1
+            add rdi, 4 ;me muevo a la posicion del siguiente numero
+            jmp .no_block_loop_min
+
+
+    .min_return:
+        mov rax, [rsp+16] ;cargo la direccion donde se almacenara el minimo
+        vmovss [rax], xmm1 ;guardo el minimo en la direccion correspondiente
+
+
+.max: ;exactamente la misma logica que el minimo pero con las funciones de maximo y la direccion final correcta
+    .max_setup:
+        mov rdi, [rsp+32]
+        mov eax, esi
+        xor edx, edx
+        mov ecx, 8
+        div ecx
+
+        cmp eax,0
+        je .max_remainder_no_blocks 
+        vmovaps ymm1, [rdi] 
+        mov r10d, 1 
+        xor r11d, r11d 
+        add rdi, 32 
+        cmp r10d, eax
+        je .horizontal_max 
+
+
+    .max_vectorial:
+        vmovaps ymm2, [rdi] 
+        vmaxps ymm1, ymm1, ymm2 
+        add r10d, 1 
+        add rdi, 32 
+        cmp r10d, eax 
+        jne .max_vectorial
+
+
+    .horizontal_max:
+        vextractf128 xmm2, ymm1, 1 
+        vextractf128 xmm3, ymm1, 0 
+        vmaxps xmm1, xmm2, xmm3 
+        vshufps xmm2, xmm1, xmm1, 0x4E 
+        vmaxps xmm1, xmm1, xmm2 
+        vshufps xmm2, xmm1, xmm1, 0xB1 
+        vmaxps xmm1, xmm1, xmm2
+
+        cmp edx,0
+        je .max_return 
+
+    .max_remainder_blocks:
+        .block_loop_max:
+            vmovss xmm2, [rdi] 
+            vmaxss xmm1, xmm1, xmm2 
+            add r11d, 1
+            add rdi, 4 
+            cmp r11d, edx 
+            jne .block_loop_max
+
+        jmp .max_return
+
+
+    .max_remainder_no_blocks:
+        xor r11d, r11d 
+        vmovss xmm1, [rdi] 
+        add rdi, 4 
+        add r11d, 1 
+        .no_block_loop_max:
+            cmp r11d, edx
+            je .max_return
+            vmovss xmm2, [rdi] 
+            vmaxss xmm1, xmm1, xmm2 
+            add r11d, 1
+            add rdi, 4 
+            jmp .no_block_loop_max
+
+
+    .max_return:
+        mov rax, [rsp+24] 
+        vmovss [rax], xmm1
+
+
+
+    .rsp_original_position_return:
+        add rsp, 40 ;Se devuelve rsp a la posicion original para evitar el segmentation fault
+        vzeroupper
+        ret
+
+    .neqz: ;Caso borde n=0. Simplemente no hay datos se pone todo en cero
+    vxorps xmm0, xmm0, xmm0
+    mov rax, [rsp+0]
+    vmovss [rax], xmm0       
+    mov rax, [rsp+8]
+    vmovss [rax], xmm0       
+    mov rax, [rsp+16]
+    vmovss [rax], xmm0       
+    mov rax, [rsp+24]
+    vmovss [rax], xmm0       
+    jmp .rsp_original_position_return
+        
+
+normalize_array:
+;rdi = in, rsi = out, edx = n, xmm0 = mean, xmm1 = stddev
+;Caso borde: si stddev == 0.0, copie in[i] en out[i] tal cual.
+;   out[i] = (in[i] - mean) / stddev
+
+    ; Caso borde, no hay elementos n=0
+    cmp edx, 0
+    je .end
+
+    .set_up: ;Se cargan en registros la media, stddev (precarga de valores) y se calcula la cantidad de bloques y residuo, se reinician contadores
+        mov eax, edx    
+        xor edx, edx    
+        mov ecx, 8      
+        div ecx    ; eax = [edx:eax] // ecx  y edx = [edx:eax] mod ecx 
+        mov r8d, 0 ;contador bloque
+        mov r9d, 0 ;contador residuo
+
+    .stddev_eqz:
+    vxorps xmm4, xmm4, xmm4     
+    vucomiss xmm1, xmm4         ; stddev=0?
+    je .write_values_border_case      
+
+
+    .block_eqz:
+    cmp eax, 0
+    je .normalize_remainder
+
+
+    .normalize_blocks:
+    vbroadcastss ymm2, xmm0 ;ymm2 buffer con medias
+    vbroadcastss ymm3, xmm1 ;ymm3 buffer con stdevs
+    vmovaps ymm5, [rdi] ;ymm5 acumulador resultados
+    vsubps ymm5, ymm5, ymm2
+    vdivps ymm5, ymm5, ymm3 ;operacion
+    vmovaps [rsi], ymm5
+
+    add rdi, 32
+    add rsi, 32
+    add r8d, 1
+    cmp r8d, eax
+    jne .normalize_blocks
+
+    .remainder_eqz:
+    cmp edx, 0
+    je .end
+
+    .normalize_remainder:
+    vmovss xmm5, [rdi]          ; cargo in[i]
+    vsubss xmm5, xmm5, xmm0 
+    vdivss xmm5, xmm5,xmm1
+    vmovss [rsi], xmm5          ; guardo in[i] en out[i]
+    add rdi, 4                  
+    add rsi, 4                  
+    add r9d, 1                 
+    cmp r9d, edx              
+    jne .normalize_remainder
+    jmp .end
+    
+    .write_values_border_case:
+        cmp eax, 0
+        je .reminder_loop_bc
+
+        .block_loop_bc:
+        vmovaps ymm5, [rdi]
+        vmovaps [rsi], ymm5
+        add rdi, 32
+        add rsi, 32
+        add r8d, 1
+        cmp r8d, eax
+        jne .block_loop_bc
+
+        .reminder_loop_bc:
+        cmp edx, 0
+        je .end
+
+        vmovss xmm5, [rdi]          ; cargo in[i]
+        vmovss [rsi], xmm5         ; guardo in[i] en out[i]
+        add rdi, 4                  
+        add rsi, 4                  
+        add r9d, 1                 
+        cmp r9d, edx              
+        jne .reminder_loop_bc
+
+    .end:
     vzeroupper
     ret
+    
+    
+    
 
-; ---------------------------------------------------------------
-; void normalize_array(const float *in, float *out, int n,
-;                       float mean, float stddev)
-;   rdi = in, rsi = out, edx = n, xmm0 = mean, xmm1 = stddev
-;
-;   out[i] = (in[i] - mean) / stddev
-;   Caso borde: si stddev == 0.0, copie in[i] en out[i] tal cual.
-;
-; TODO (estudiante):
-;   - "Broadcast" mean y stddev a registros YMM con vbroadcastss
-;     (guarde antes xmm0/xmm1 en otros registros o en la pila, ya
-;     que planea usar xmm0/xmm1 tambien como temporales del bucle).
-;   - Bucle vectorial de 8 en 8: vmovups/vmovaps carga, vsubps,
-;     vdivps (o vmulps por el reciproco de stddev si quieren
-;     optimizar), vmovups/vmovaps guarda.
-;   - Bucle escalar de cierre para el remanente (n % 8), igual que
-;     en sum_array.
-;   - 'vzeroupper' antes del 'ret'.
-; ---------------------------------------------------------------
-normalize_array:
-    ; TODO: implementar
-    ret
+
+    
+
+    
+    
+
+
+
+
+   
