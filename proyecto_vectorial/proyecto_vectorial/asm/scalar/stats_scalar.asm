@@ -61,32 +61,42 @@ sum_array:
 ;   4) Guardar los resultados en las direcciones recibidas por
 ;      puntero: [rdx]=mean, [rcx]=var, [r8]=min, [r9]=max.
 ;   5) No olvide restaurar los registros callee-saved en el epilogo.
+
+
 ; ---------------------------------------------------------------
 compute_stats:
     push    rbx
+    push    rbp
     push    r12
     push    r13
     push    r14
     push    r15
 
-    ; TODO: implementar el algoritmo descrito arriba.
+    mov     rbx, rdi            ; rbx = arr
+    mov     ebp, esi            ; ebp = n
+    mov     r12, rdx            ; r12 = mean_ptr
+    mov     r13, rcx            ; r13 = var_ptr
+    mov     r14, r8             ; r14 = min_ptr
+    mov     r15, r9             ; r15 = max_ptr
 
-    ; --- placeholder temporal: elimine estas lineas al implementar ---
-    xorps   xmm0, xmm0
-    movss   [rdx], xmm0
-    movss   [rcx], xmm0
-    movss   [r8], xmm0
-    movss   [r9], xmm0
-    ; --- fin placeholder ---
+    test    ebp, ebp
+    jle     .cs2_empty
 
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    ret
-
+    ; ------Reutilizando sum array creado por el profe en el instructivo para el mean
+    mov     rdi, rbx
+    mov     esi, ebp
+    call    sum_array           ; xmm0 = suma; se llama la funcion auxiliar creada por el profe sum array
+                                 ; rbx/rbp/r12-r15
+    cvtsi2ss xmm4, ebp
+    divss   xmm0, xmm4          ;xmm0 = mean, se genera el mean
+    movss   [r12], xmm0         ; *mean
+    movaps  xmm6, xmm0          ; conservar mean
 ; ---------------------------------------------------------------
+
+
+
+
+
 ; void normalize_array(const float *in, float *out, int n,
 ;                       float mean, float stddev)
 ;   rdi = in, rsi = out, edx = n, xmm0 = mean, xmm1 = stddev
