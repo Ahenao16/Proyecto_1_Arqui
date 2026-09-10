@@ -91,6 +91,59 @@ compute_stats:
     divss   xmm0, xmm4          ;xmm0 = mean, se genera el mean
     movss   [r12], xmm0         ; *mean
     movaps  xmm6, xmm0          ; conservar mean
+
+	;continuacion de la funcion compute_stats.falta comprobacion por errores de sintaxis a la hora de la programacion en papel
+    mov     r10, rbx
+    mov     ecx, ebp
+    movss   xmm1, [rbx]         ; min = arr[0] ;calculo del minimo
+    movss   xmm2, [rbx]         ; max = arr[0] ;calculo del maximo
+
+.cs2_minmax:
+    movss   xmm3, [r10]
+    minss   xmm1, xmm3
+    maxss   xmm2, xmm3
+    add     r10, 4
+    dec     ecx
+    jnz     .cs2_minmax
+
+    movss   [r14], xmm1         ; *min
+    movss   [r15], xmm2         ; *max
+
+    ; --- calculo de sum((x - mean)^2)---
+    mov     r10, rbx
+    mov     ecx, ebp
+    xorps   xmm5, xmm5
+
+.cs2_var:
+    movss   xmm3, [r10]
+    subss   xmm3, xmm6
+    mulss   xmm3, xmm3
+    addss   xmm5, xmm3
+    add     r10, 4
+    dec     ecx
+    jnz     .cs2_var
+
+    cvtsi2ss xmm4, ebp
+    divss   xmm5, xmm4          ; var = sum((x-mean)^2) / n
+    movss   [r13], xmm5
+    jmp     .cs2_ret
+
+.cs2_empty:
+    xorps   xmm0, xmm0
+    movss   [r12], xmm0
+    movss   [r13], xmm0
+    movss   [r14], xmm0
+    movss   [r15], xmm0
+
+.cs2_ret:
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbp
+    pop     rbx
+    ret
+
 ; ---------------------------------------------------------------
 
 
