@@ -165,5 +165,46 @@ compute_stats:
 ; en cada iteracion desde una copia guardada en la pila.
 ; ---------------------------------------------------------------
 normalize_array:
-    ; TODO: implementar
+    push    rbp
+    mov     rbp, rsp
+    sub     rsp, 8
+    movss   [rbp-4], xmm0       ; guardar mean en la pila
+    movss   [rbp-8], xmm1       ; guardar stddev en la pila
+
+    test    edx, edx
+    jle     .na2_done
+
+    xorps   xmm2, xmm2
+    comiss  xmm1, xmm2
+    je      .na2_copy           ; stddev == 0
+    xor     eax, eax
+
+.na2_loop:
+    cmp     eax, edx
+    jge     .na2_done
+    movss   xmm3, [rdi + rax*4]
+    movss   xmm4, [rbp-4]       ; recargar mean desde la pila
+    subss   xmm3, xmm4
+    movss   xmm5, [rbp-8]       ; recargar stddev desde la pila
+    divss   xmm3, xmm5
+    movss   [rsi + rax*4], xmm3
+    inc     eax
+    jmp     .na2_loop
+
+.na2_copy:
+    xor     eax, eax
+
+.na2_copy_loop:
+    cmp     eax, edx
+    jge     .na2_done
+    movss   xmm3, [rdi + rax*4]
+    movss   [rsi + rax*4], xmm3
+    inc     eax
+    jmp     .na2_copy_loop
+
+.na2_done:
+    mov     rsp, rbp
+    pop     rbp
     ret
+
+
