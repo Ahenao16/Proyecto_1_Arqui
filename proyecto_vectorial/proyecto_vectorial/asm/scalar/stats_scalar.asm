@@ -90,7 +90,7 @@ compute_stats: ;---inicio de la funcion---
     mov     r15, r9             ; r15 = max_ptr ;--puntero que guarda el valor maximo del arreglo
 
     test    ebp, ebp ;--actualizacion de banderas
-    jle     .cs2_empty ;--prevencion del error por cero
+    jle     .cs3_empty ;--prevencion del error por cero
 
     ; ------Reutilizando sum array creado por el profe en el instructivo para el mean
     ;primer ciclo: mean reutilizando el sum array
@@ -105,7 +105,7 @@ compute_stats: ;---inicio de la funcion---
 
 	;continuacion de la funcion compute_stats
 	;segundo ciclo: min, max y varianza en un solo recorrido
-	xor     eax, ebp            ;i=0
+	xor     eax, eax            ;i=0
     movss   xmm1, [rbx]         ; min = arr[0] ;calculo del minimo
     movss   xmm2, [rbx]         ; max = arr[0] ;calculo del maximo
     xorps   xmm5, xmm5          ;acumulador
@@ -170,14 +170,14 @@ normalize_array:;---inicio de la funcion
 	movaps xmm7, xmm1 ;xmm7 = stddev (fijo todo el ciclo)
 
 	test   edx, edx
-	jle    .na3_done
+	jle    .na2_done
 
 	;---¿|stddev|< epsilon?
 	movaps  xmm2, xmm7
 	andps   xmm2, [abs_mask]   ;xmm2=|sttdev|
 	movss   xmm3, [epsilon]
 	comiss  xmm2, xmm3
-	jb  .na3_copy ;|stddev| < epsilon -> se trata como 0
+	jb  .na2_copy ;|stddev| < epsilon -> se trata como 0
 
 	xor     eax, eax
 
