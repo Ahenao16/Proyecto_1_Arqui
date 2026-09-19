@@ -166,19 +166,20 @@ compute_stats: ;---inicio de la funcion---
 ;-----------funcion normalize array--------------
 ;objetivo de la funcion:normalizar el arreglo de punto flotantes y almacenando datos en un arreglo de salida
 normalize_array:;---inicio de la funcion
-    push    rbp 
-    mov     rbp, rsp
-    sub     rsp, 8
-    movss   [rbp-4], xmm0       ; guardar mean en la pila
-    movss   [rbp-8], xmm1       ; guardar stddev en la pila
+	movaps xmm6, xmm0 ;xmm6 = mean (fijo todo el ciclo)
+	movaps xmm7, xmm1 ;xmm7 = stddev (fijo todo el ciclo)
 
-    test    edx, edx
-    jle     .na2_done
+	test   edx, edx
+	jle    .na3_done
 
-    xorps   xmm2, xmm2
-    comiss  xmm1, xmm2
-    je      .na2_copy           ; stddev == 0
-    xor     eax, eax
+	;---¿|stddev|< epsilon?
+	movaps  xmm2, xmm7
+	andps   xmm2, [abs_mask]   ;xmm2=|sttdev|
+	movss   xmm3, [epsilon]
+	comiss  xmm2, xmm3
+	jb  .na3_copy ;|stddev| < epsilon -> se trata como 0
+
+	xor     eax, eax
 
 .na2_loop:
     cmp     eax, edx
