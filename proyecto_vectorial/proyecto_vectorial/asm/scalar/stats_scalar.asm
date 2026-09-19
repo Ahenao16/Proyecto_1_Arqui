@@ -74,6 +74,8 @@ sum_array:
 
 compute_stats: ;---inicio de la funcion---
 
+	;---entradas de la funcion----------------
+	;registros que almacenan los datos de entradas
     push    rbx ;se guardan los datos en pilas
     push    rbp
     push    r12
@@ -81,7 +83,8 @@ compute_stats: ;---inicio de la funcion---
     push    r14
     push    r15
 
-	;-----inicio de los punteros que almacenan los datos de las pilas iniciales
+	;-----inicio de los punteros que almacenan los datos de las pilas iniciales-------------
+	;-----funcion: recibir los parametros de la funcion brindada por el profe---------------
     mov     rbx, rdi            ; rbx = arr ;--puntero a la memoria donde inicia el arreglo
     mov     ebp, esi            ; ebp = n ;--tamano del arreglo
     mov     r12, rdx            ; r12 = mean_ptr ;--puntero que guarda el resultado de la media
@@ -89,56 +92,58 @@ compute_stats: ;---inicio de la funcion---
     mov     r14, r8             ; r14 = min_ptr ;--puntero que guarda el valor minimo del arreglo
     mov     r15, r9             ; r15 = max_ptr ;--puntero que guarda el valor maximo del arreglo
 
+	;-----prevención de errores--------
     test    ebp, ebp ;--actualizacion de banderas
     jle     .cs3_empty ;--prevencion del error por cero
 
     ; ------Reutilizando sum array creado por el profe en el instructivo para el mean
     ;primer ciclo: mean reutilizando el sum array
+    ;calculo de la media
     mov     rdi, rbx
     mov     esi, ebp
     call    sum_array           ; xmm0 = suma; se llama la funcion auxiliar creada por el profe sum array
                                  ; rbx/rbp/r12-r15
-    cvtsi2ss xmm4, ebp
-    divss   xmm0, xmm4          ;xmm0 = mean, se genera el mean
-    movss   [r12], xmm0         ; *mean
-    movaps  xmm6, xmm0          ; conservar mean
+    cvtsi2ss xmm4, ebp			;se convierte el numero entero a punto flotante y se almacena en xmm4
+    divss   xmm0, xmm4          ;xmm0 = mean, se divide la suma total entre n
+    movss   [r12], xmm0         ; mueve el valor flotante de la media a la direccion de memoria apuntada en r12
+    movaps  xmm6, xmm0          ; conservar mean como respaldo
 
 	;continuacion de la funcion compute_stats
 	;segundo ciclo: min, max y varianza en un solo recorrido
-	xor     eax, eax            ;i=0
+	xor     eax, eax            ;i=0 ;xor que coloca el registro en 0 donde se inicia el contador
     movss   xmm1, [rbx]         ; min = arr[0] ;calculo del minimo
     movss   xmm2, [rbx]         ; max = arr[0] ;calculo del maximo
-    xorps   xmm5, xmm5          ;acumulador
+    xorps   xmm5, xmm5          ;acumulador usado como apoyo para calcular la varianza
 
-.cs3_loop:
+.cs3_loop: ;inicio del ciclo
 	cmp eax, ebp
 	jge .cs3_loop_done
 	movss xmm3, [rbx+rax*4]    ;x=arr[i]
 	minss xmm1, xmm3           ;min = min(min, x)
 	maxss xmm2, xmm3           ;max = max(max, x)
+	;------inicio de la sumatoria para la varianza-------
 	subss xmm3, xmm6           ;x- mean
 	mulss xmm3, xmm3           ;(x-mean)²
 	addss  xmm5, xmm3           ;acumulador
-	inc   eax
-	jmp   .cs3_loop
+	inc   eax ;se incrementa el codigo
+	jmp   .cs3_loop ;se salta de vuelta al ciclo para procesar el siguiente dato
 
+;se guarda el valor minimo final y el valor maximo final en las direcciones de memoria apuntadas por r14
 .cs3_loop_done:
     movss   [r14], xmm1         ; *min
     movss   [r15], xmm2         ; *max
-    cvtsi2ss xmm4, ebp
-    divss   xmm5, xmm4         ;var = sum((x-mean)²)/n
+    cvtsi2ss xmm4, ebp 			;conversion del n a flotante
+    divss   xmm5, xmm4         ;var = sum((x-mean)²/n
     movss   [r13], xmm5
-    jmp     .cs3_ret
+    jmp     .cs3_ret	;
 
-
-.cs3_empty:
-    xorps   xmm0, xmm0
+	xorps   xmm0, xmm0
     movss   [r12], xmm0
     movss   [r13], xmm0
     movss   [r14], xmm0
     movss   [r15], xmm0
 
-.cs3_ret:
+.cs3_ret: ;arreglo de errores
     pop     r15
     pop     r14
     pop     r13
@@ -169,23 +174,24 @@ normalize_array:;---inicio de la funcion
 	movaps xmm6, xmm0 ;xmm6 = mean (fijo todo el ciclo)
 	movaps xmm7, xmm1 ;xmm7 = stddev (fijo todo el ciclo)
 
-	test   edx, edx
+	test   edx, edx ;se valida el tamano del arreglo si es menor o igual a 0 salta al final
 	jle    .na2_done
 
+	;division de flotantes para que la desviacion estandar no genere errores
 	;---¿|stddev|< epsilon?
-	movaps  xmm2, xmm7
-	movss   xmm3, [abs_mask]
-	andps   xmm2, xmm3   ;xmm2=|sttdev|
-	movss   xmm3, [epsilon]
-	comiss  xmm2, xmm3
-	jb  .na2_copy ;|stddev| < epsilon -> se trata como 0
+	movaps  xmm2, xmm7 ;copia desviacion estandar
+	movss   xmm3, [abs_mask];carga de la mascara de bits
+	andps   xmm2, xmm3   ;xmm2=|sttdev|;se elimina el bit de signo calculando el valor absoluto de la desviacion estandar
+	movss   xmm3, [epsilon] ;se carga un valor epsilon
+	comiss  xmm2, xmm3 ;se compara el valor de la desviacion estandar con epsilon
+	jb  .na2_copy ;|stddev| < epsilon -> se trata como 0 ;si la desviacion estandar es menor a epsilon salta al siguiente ciclo
 
 	xor     eax, eax
 
-.na2_loop:
+.na2_loop: ;inicio del codigo
     cmp     eax, edx
     jge     .na2_done
-    ;movss   xmm3, [rdi + rax*4]
+    ;movss   xmm3, [rdi + rax*4] ;guarda el registro en un arreglo de destino apuntado por el registro rsi
     ;movss   xmm4, [rbp-4]       ; recargar mean desde la pila
     ;subss   xmm3, xmm4
     ;movss   xmm5, [rbp-8]       ; recargar stddev desde la pila
@@ -196,6 +202,8 @@ normalize_array:;---inicio de la funcion
     inc     eax
     jmp     .na2_loop
 
+;ciclo de respaldo
+;funcion: leer arreglo original en rdi y copiar el valor en el arreglo rsi
 .na2_copy:
     xor     eax, eax
 
@@ -207,6 +215,7 @@ normalize_array:;---inicio de la funcion
     inc     eax
     jmp     .na2_copy_loop
 
+;finalizacion del codigo
 .na2_done:
     ret
 
