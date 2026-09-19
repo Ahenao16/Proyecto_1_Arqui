@@ -93,6 +93,7 @@ compute_stats: ;---inicio de la funcion---
     jle     .cs2_empty ;--prevencion del error por cero
 
     ; ------Reutilizando sum array creado por el profe en el instructivo para el mean
+    ;primer ciclo: mean reutilizando el sum array
     mov     rdi, rbx
     mov     esi, ebp
     call    sum_array           ; xmm0 = suma; se llama la funcion auxiliar creada por el profe sum array
@@ -102,27 +103,33 @@ compute_stats: ;---inicio de la funcion---
     movss   [r12], xmm0         ; *mean
     movaps  xmm6, xmm0          ; conservar mean
 
-	;continuacion de la funcion compute_stats.falta comprobacion por errores de sintaxis a la hora de la programacion en papel
-    mov     r10, rbx
-    mov     ecx, ebp
+	;continuacion de la funcion compute_stats
+	;segundo ciclo: min, max y varianza en un solo recorrido
+	xor     eax, ebp            ;i=0
     movss   xmm1, [rbx]         ; min = arr[0] ;calculo del minimo
     movss   xmm2, [rbx]         ; max = arr[0] ;calculo del maximo
+    xorps   xmm5, xmm5          ;acumulador
 
-.cs2_minmax:
-    movss   xmm3, [r10] ;se carga el elemento actual
-    minss   xmm1, xmm3 ;comparacion  y guardar el elemento menor entre los registros
-    maxss   xmm2, xmm3 ;
-    add     r10, 4
-    dec     ecx
-    jnz     .cs2_minmax
+.cs3_loop:
+	cmp eax, ebp
+	jge .cs3_loop_done
+	movss xmm3, [rbx+rax*4]    ;x=arr[i]
+	minss xmm1, xmm3           ;min = min(min, x)
+	maxss xmm2, xmm3           ;max = max(max, x)
+	subss xmm3, xmm6           ;x- mean
+	mulss xmm3, xmm3           ;(x-mean)²
+	adds  xmm5, xmm3           ;acumulador
+	inc   eax
+	jmp   .cs3_loop
 
+.cs3_loop_done:
     movss   [r14], xmm1         ; *min
     movss   [r15], xmm2         ; *max
-
-    ; --- calculo de sum((x - mean)^2)---
-    mov     r10, rbx
-    mov     ecx, ebp
-    xorps   xmm5, xmm5
+    cvtsi2ss xmm4, ebp
+    divss   xmm5, xmm4         ;var = sum((x-mean)²)/n
+    movss   [r13], xmm5
+    jmp     .cs3_ret
+    
 
 .cs2_var:
     movss   xmm3, [r10]
