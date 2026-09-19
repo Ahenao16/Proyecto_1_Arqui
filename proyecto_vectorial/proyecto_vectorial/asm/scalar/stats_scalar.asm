@@ -137,6 +137,7 @@ compute_stats: ;---inicio de la funcion---
     movss   [r13], xmm5
     jmp     .cs3_ret	;
 
+.cs3_empty:
 	xorps   xmm0, xmm0
     movss   [r12], xmm0
     movss   [r13], xmm0
