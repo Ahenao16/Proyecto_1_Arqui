@@ -13,6 +13,11 @@
     global compute_stats
     global normalize_array
 
+	section.rodata ;definicion de datos de tipo lectura
+	align 4 ;se alinean los datos en multiplos de 4 bytes
+
+abs_mask: dd 0x7FFFFFFF ;--se coloca el bit de signo en cero
+epsilon: dd1.0e-6 ;umbral para sttdev como cero
     section .text
 
 ; ---------------------------------------------------------------
@@ -38,7 +43,6 @@ sum_array:
 
 .sum_done:
     ret
-
 ; ---------------------------------------------------------------
 ; void compute_stats(const float *arr, int n,
 ;                     float *mean, float *var, float *min, float *max)
@@ -63,24 +67,30 @@ sum_array:
 ;   5) No olvide restaurar los registros callee-saved en el epilogo.
 
 
+;------------inicio de la creacion de funciones------------------
 ; ---------------------------------------------------------------
-compute_stats:
-    push    rbx
+;funcion compute stats
+;objetivo de la funcion: calcular los estadisticos a partir de un arreglo de numeros de punto flotante
+
+compute_stats: ;---inicio de la funcion---
+
+    push    rbx ;se guardan los datos en pilas
     push    rbp
     push    r12
     push    r13
     push    r14
     push    r15
 
-    mov     rbx, rdi            ; rbx = arr
-    mov     ebp, esi            ; ebp = n
-    mov     r12, rdx            ; r12 = mean_ptr
-    mov     r13, rcx            ; r13 = var_ptr
-    mov     r14, r8             ; r14 = min_ptr
-    mov     r15, r9             ; r15 = max_ptr
+	;-----inicio de los punteros que almacenan los datos de las pilas iniciales
+    mov     rbx, rdi            ; rbx = arr ;--puntero a la memoria donde inicia el arreglo
+    mov     ebp, esi            ; ebp = n ;--tamano del arreglo
+    mov     r12, rdx            ; r12 = mean_ptr ;--puntero que guarda el resultado de la media
+    mov     r13, rcx            ; r13 = var_ptr ;--puntero que guarda el resultado de la varianza
+    mov     r14, r8             ; r14 = min_ptr ;--puntero que guarda el valor minimo del arreglo
+    mov     r15, r9             ; r15 = max_ptr ;--puntero que guarda el valor maximo del arreglo
 
-    test    ebp, ebp
-    jle     .cs2_empty
+    test    ebp, ebp ;--actualizacion de banderas
+    jle     .cs2_empty ;--prevencion del error por cero
 
     ; ------Reutilizando sum array creado por el profe en el instructivo para el mean
     mov     rdi, rbx
@@ -99,9 +109,9 @@ compute_stats:
     movss   xmm2, [rbx]         ; max = arr[0] ;calculo del maximo
 
 .cs2_minmax:
-    movss   xmm3, [r10]
-    minss   xmm1, xmm3
-    maxss   xmm2, xmm3
+    movss   xmm3, [r10] ;se carga el elemento actual
+    minss   xmm1, xmm3 ;comparacion  y guardar el elemento menor entre los registros
+    maxss   xmm2, xmm3 ;
     add     r10, 4
     dec     ecx
     jnz     .cs2_minmax
@@ -145,13 +155,8 @@ compute_stats:
     ret
 
 ; ---------------------------------------------------------------
-
-
-
-
-
 ; void normalize_array(const float *in, float *out, int n,
-;                       float mean, float stddev)
+;   float mean, float stddev)
 ;   rdi = in, rsi = out, edx = n, xmm0 = mean, xmm1 = stddev
 ;
 ;   out[i] = (in[i] - mean) / stddev
@@ -164,8 +169,11 @@ compute_stats:
 ; System V no se usan para pasar argumentos), o vuelva a cargarlos
 ; en cada iteracion desde una copia guardada en la pila.
 ; ---------------------------------------------------------------
-normalize_array:
-    push    rbp
+
+;-----------funcion normalize array--------------
+;objetivo de la funcion:normalizar el arreglo de punto flotantes y almacenando datos en un arreglo de salida
+normalize_array:;---inicio de la funcion
+    push    rbp 
     mov     rbp, rsp
     sub     rsp, 8
     movss   [rbp-4], xmm0       ; guardar mean en la pila
