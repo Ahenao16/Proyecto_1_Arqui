@@ -13,11 +13,11 @@
     global compute_stats
     global normalize_array
 
-	section.rodata ;definicion de datos de tipo lectura
+	section .rodata ;definicion de datos de tipo lectura
 	align 4 ;se alinean los datos en multiplos de 4 bytes
 
 abs_mask: dd 0x7FFFFFFF ;--se coloca el bit de signo en cero
-epsilon: dd1.0e-6 ;umbral para sttdev como cero
+epsilon: dd 1.0e-6 ;umbral para sttdev como cero
     section .text
 
 ; ---------------------------------------------------------------
@@ -118,7 +118,7 @@ compute_stats: ;---inicio de la funcion---
 	maxss xmm2, xmm3           ;max = max(max, x)
 	subss xmm3, xmm6           ;x- mean
 	mulss xmm3, xmm3           ;(x-mean)²
-	adds  xmm5, xmm3           ;acumulador
+	addss  xmm5, xmm3           ;acumulador
 	inc   eax
 	jmp   .cs3_loop
 
