@@ -129,30 +129,16 @@ compute_stats: ;---inicio de la funcion---
     divss   xmm5, xmm4         ;var = sum((x-mean)²)/n
     movss   [r13], xmm5
     jmp     .cs3_ret
-    
 
-.cs2_var:
-    movss   xmm3, [r10]
-    subss   xmm3, xmm6
-    mulss   xmm3, xmm3
-    addss   xmm5, xmm3
-    add     r10, 4
-    dec     ecx
-    jnz     .cs2_var
 
-    cvtsi2ss xmm4, ebp
-    divss   xmm5, xmm4          ; var = sum((x-mean)^2) / n
-    movss   [r13], xmm5
-    jmp     .cs2_ret
-
-.cs2_empty:
+.cs3_empty:
     xorps   xmm0, xmm0
     movss   [r12], xmm0
     movss   [r13], xmm0
     movss   [r14], xmm0
     movss   [r15], xmm0
 
-.cs2_ret:
+.cs3_ret:
     pop     r15
     pop     r14
     pop     r13
