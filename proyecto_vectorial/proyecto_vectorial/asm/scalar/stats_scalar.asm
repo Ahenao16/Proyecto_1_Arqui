@@ -8,7 +8,7 @@
 ;   retorno float:    xmm0
 ;   callee-saved:     rbx, rbp, r12-r15 (si los usa, debe preservarlos)
 ; =============================================================
-
+	default rel
     global sum_array
     global compute_stats
     global normalize_array
@@ -174,7 +174,8 @@ normalize_array:;---inicio de la funcion
 
 	;---¿|stddev|< epsilon?
 	movaps  xmm2, xmm7
-	andps   xmm2, [abs_mask]   ;xmm2=|sttdev|
+	movss   xmm3, [abs_mask]
+	andps   xmm2, xmm3   ;xmm2=|sttdev|
 	movss   xmm3, [epsilon]
 	comiss  xmm2, xmm3
 	jb  .na2_copy ;|stddev| < epsilon -> se trata como 0
@@ -184,10 +185,12 @@ normalize_array:;---inicio de la funcion
 .na2_loop:
     cmp     eax, edx
     jge     .na2_done
-    movss   xmm3, [rdi + rax*4]
-    movss   xmm4, [rbp-4]       ; recargar mean desde la pila
-    subss   xmm3, xmm4
-    movss   xmm5, [rbp-8]       ; recargar stddev desde la pila
+    ;movss   xmm3, [rdi + rax*4]
+    ;movss   xmm4, [rbp-4]       ; recargar mean desde la pila
+    ;subss   xmm3, xmm4
+    ;movss   xmm5, [rbp-8]       ; recargar stddev desde la pila
+	subss xmm3, xmm6 ;x-mean
+	divss xmm3, xmm7
     divss   xmm3, xmm5
     movss   [rsi + rax*4], xmm3
     inc     eax
@@ -205,8 +208,6 @@ normalize_array:;---inicio de la funcion
     jmp     .na2_copy_loop
 
 .na2_done:
-    mov     rsp, rbp
-    pop     rbp
     ret
 
  section .note.GNU-stack noalloc noexec nowrite
