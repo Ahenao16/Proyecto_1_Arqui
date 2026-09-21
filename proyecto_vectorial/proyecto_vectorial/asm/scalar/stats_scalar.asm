@@ -192,14 +192,10 @@ normalize_array:;---inicio de la funcion
 .na2_loop: ;inicio del codigo
     cmp     eax, edx
     jge     .na2_done
-    ;movss   xmm3, [rdi + rax*4] ;guarda el registro en un arreglo de destino apuntado por el registro rsi
-    ;movss   xmm4, [rbp-4]       ; recargar mean desde la pila
-    ;subss   xmm3, xmm4
-    ;movss   xmm5, [rbp-8]       ; recargar stddev desde la pila
-	subss xmm3, xmm6 ;x-mean
-	divss xmm3, xmm7
-    divss   xmm3, xmm5
-    movss   [rsi + rax*4], xmm3
+    movss   xmm3, [rdi + rax*4]   ; xmm3 = in[i]
+    subss   xmm3, xmm6            ; x - mean
+    divss   xmm3, xmm7            ; (x - mean) / stddev
+    movss   [rsi + rax*4], xmm3   ; out[i] = resultado
     inc     eax
     jmp     .na2_loop
 
