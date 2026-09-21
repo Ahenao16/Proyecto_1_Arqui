@@ -1,0 +1,15 @@
+fecha:      Sun Sep 20 10:12:04 PM CST 2026
+kernel:     Linux 7.0.0-31-generic
+gcc:        gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+nasm:       NASM version 2.16.01
+trials:     10   target_elems: 50000000   cpu_pin: ninguno
+governor:   powersave
+CPU(s):                                  8
+Model name:                              Intel(R) Core(TM) i7-7700HQ CPU @ 2.80GHz
+CPU(s) scaling MHz:                      26%
+CPU max MHz:                             3800.0000
+CPU min MHz:                             800.0000
+L1d cache:                               128 KiB (4 instances)
+L1i cache:                               128 KiB (4 instances)
+L2 cache:                                1 MiB (4 instances)
+L3 cache:                                6 MiB (1 instance)
