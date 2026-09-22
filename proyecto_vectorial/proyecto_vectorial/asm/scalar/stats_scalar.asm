@@ -70,88 +70,119 @@ sum_array:
 ;------------inicio de la creacion de funciones------------------
 ; ---------------------------------------------------------------
 ;funcion compute stats
-;objetivo de la funcion: calcular los estadisticos a partir de un arreglo de numeros de punto flotante
+;Objetivo de esta rutina - Calcular en un solo pase adicional (mas la rutina de
+;sum_array), los siguientes datos estadisticos - la media, la varianza poblacional,
+;el minimo y el maximo obtenidos a partir de un arreglo de datos floats y finalmente
+;dejar cada resultado en la direccion de memoria que indica su puntero correspondiente
 
-compute_stats: ;---inicio de la funcion---
+;Resumen puntual de la logica
+;1 -  Guarda los parametros de entrada en registros callee-saved (rbx, rbp, r12, r13
+;r14 y r15) porque se va a llamar la funcion sum_array, que puede destruir los registros
+;caller-saved.
 
-	;---entradas de la funcion----------------
+;2 - Si n <= 0 , escribe 0.0 en las 4 salidas y termina la ejecucion (caso borde)
+;3 - Calcula mean(media) = sum_array(arra, n)/n(total de elementos) y lo guarda en
+;(mean_ptr)
+
+;4 - Recorre el arreglo una vez mas llevando min, max y la suma de (x - mean)elavado2
+;simultaneamente
+
+;5 - Guarda min y max en sus puntero, calcula var(varianza) = suma/n y la guarda en su
+;puntero correspodiente
+
+;6 - Restaura los registros callee-saved y retorno.
+
+compute_stats:
+
+	;---entradas de la funcion
 	;registros que almacenan los datos de entradas
-    push    rbx ;se guardan los datos en pilas
-    push    rbp
-    push    r12
-    push    r13
-    push    r14
-    push    r15
+	;se almacenan en una pila
+    push    rbx ;guarda rbx en la pila (la funcion lo va usar para "arr")
+    push    rbp ;guarda rbp (se usa para "n" (cantidad de elementos de arreglo de in)
+    push    r12 ;guarda r12 (se usa para mean_ptr (puntero de la media))
+    push    r13 ;guarda r13 (se usa para var_ptr (puntero de la varianza))
+    push    r14 ;guarda r14 (se usa para min_ptr (puntero del dato minimo del arreglo))
+    push    r15 ;guarda r15 (se usa para max_ptr (puntero del dato maximo del arreglo))
 
+    ; ----- copiar los argumentos recibidos por la ABI a registros que sobreviven la llamada a sum_array -----
 	;-----inicio de los punteros que almacenan los datos de las pilas iniciales-------------
 	;-----funcion: recibir los parametros de la funcion brindada por el profe---------------
-    mov     rbx, rdi            ; rbx = arr ;--puntero a la memoria donde inicia el arreglo
-    mov     ebp, esi            ; ebp = n ;--tamano del arreglo
-    mov     r12, rdx            ; r12 = mean_ptr ;--puntero que guarda el resultado de la media
-    mov     r13, rcx            ; r13 = var_ptr ;--puntero que guarda el resultado de la varianza
-    mov     r14, r8             ; r14 = min_ptr ;--puntero que guarda el valor minimo del arreglo
-    mov     r15, r9             ; r15 = max_ptr ;--puntero que guarda el valor maximo del arreglo
+
+    mov     rbx, rdi            ; rbx = arr        (puntero al primer elemento del arreglo)
+    mov     ebp, esi            ; ebp = n          (cantidad de elementos, 32 bits)
+    mov     r12, rdx            ; r12 = mean_ptr   (donde se debe escribir la media)
+    mov     r13, rcx            ; r13 = var_ptr    (donde se debe escribir la varianza)
+    mov     r14, r8             ; r14 = min_ptr    (donde se debe escribir el minimo)
+    mov     r15, r9             ; r15 = max_ptr    (donde se debe escribir el maximo)
 
 	;-----prevención de errores--------
-    test    ebp, ebp ;--actualizacion de banderas
-    jle     .cs3_empty ;--prevencion del error por cero
+	;se guarda el valor minimo final y el valor maximo final en las direcciones de memoria apuntadas por r14
+    ; ----- caso borde: arreglo vacio o n invalido -----
+    test    ebp, ebp            ; ebp AND ebp -> pone ZF=1 si n==0, SF=1 si n<0 (sin modificar ebp)
+    jle     .compute_stats_arreglo_vacio   ; si n <= 0, ir directo al bloque que llena todo con 0.0
 
-    ; ------Reutilizando sum array creado por el profe en el instructivo para el mean
+    ; ----- paso 1: media -----
+	; ------Reutilizando sum array creado por el profe en el instructivo para la suma del arreglo de datos float
     ;primer ciclo: mean reutilizando el sum array
     ;calculo de la media
-    mov     rdi, rbx
-    mov     esi, ebp
-    call    sum_array           ; xmm0 = suma; se llama la funcion auxiliar creada por el profe sum array
-                                 ; rbx/rbp/r12-r15
-    cvtsi2ss xmm4, ebp			;se convierte el numero entero a punto flotante y se almacena en xmm4
-    divss   xmm0, xmm4          ;xmm0 = mean, se divide la suma total entre n
-    movss   [r12], xmm0         ; mueve el valor flotante de la media a la direccion de memoria apuntada en r12
-    movaps  xmm6, xmm0          ; conservar mean como respaldo
 
-	;continuacion de la funcion compute_stats
-	;segundo ciclo: min, max y varianza en un solo recorrido
-	xor     eax, eax            ;i=0 ;xor que coloca el registro en 0 donde se inicia el contador
-    movss   xmm1, [rbx]         ; min = arr[0] ;calculo del minimo
-    movss   xmm2, [rbx]         ; max = arr[0] ;calculo del maximo
-    xorps   xmm5, xmm5          ;acumulador usado como apoyo para calcular la varianza
+    mov     rdi, rbx            ; primer argumento para sum_array: arr
+    mov     esi, ebp            ; segundo argumento para sum_array: n
+    call    sum_array           ; xmm0 = suma total de arr[0..n-1];
+    cvtsi2ss xmm4, ebp          ; convierte n (entero) a float y lo pone en xmm4
+    divss   xmm0, xmm4          ; xmm0 = suma / n = media
+    movss   [r12], xmm0         ; *mean_ptr = media (se escribe el resultado directo en la  memoria)
+    movaps  xmm6, xmm0          ; respaldo de la media en el registro xmm6, para no perderla en el siguiente ciclo
 
-.cs3_loop: ;inicio del ciclo
-	cmp eax, ebp
-	jge .cs3_loop_done
-	movss xmm3, [rbx+rax*4]    ;x=arr[i]
-	minss xmm1, xmm3           ;min = min(min, x)
-	maxss xmm2, xmm3           ;max = max(max, x)
+    ; ----- paso 2: un solo recorrido para min, max y acumulado de varianza -----
+    xor     eax, eax            ; i = 0 (indice del segundo recorrido)
+    movss   xmm1, [rbx]         ; min = arr[0]  (valor inicial de referencia para comparar)
+    movss   xmm2, [rbx]         ; max = arr[0]  (valor inicial de referencia para comparar)
+    xorps   xmm5, xmm5          ; acumulador de la varianza = 0.0
+
+.compute_stats_loop_principal:       ; incio del ciclo: procesa arr[i], actualiza min/max/acumulado
+    cmp     eax, ebp            ; compara i con n
+    jge     .compute_stats_loop_final   ; si i >= n, termino el recorrido -> salir del ciclo
+    movss   xmm3, [rbx + rax*4] ; x = arr[i]
+    minss   xmm1, xmm3          ; min = minimo(min, x)
+    maxss   xmm2, xmm3          ; max = maximo(max, x)
+
+    ; --- calculo de (x - mean)^2
 	;------inicio de la sumatoria para la varianza-------
-	subss xmm3, xmm6           ;x- mean
-	mulss xmm3, xmm3           ;(x-mean)²
-	addss  xmm5, xmm3           ;acumulador
-	inc   eax ;se incrementa el codigo
-	jmp   .cs3_loop ;se salta de vuelta al ciclo para procesar el siguiente dato
+    subss   xmm3, xmm6          ; x = x - mean
+    mulss   xmm3, xmm3          ; x = (x - mean)^2
+    addss   xmm5, xmm3          ; acumulador_var += (x - mean)^2
 
-;se guarda el valor minimo final y el valor maximo final en las direcciones de memoria apuntadas por r14
-.cs3_loop_done:
-    movss   [r14], xmm1         ; *min
-    movss   [r15], xmm2         ; *max
-    cvtsi2ss xmm4, ebp 			;conversion del n a flotante
-    divss   xmm5, xmm4         ;var = sum((x-mean)²/n
-    movss   [r13], xmm5
-    jmp     .cs3_ret	;
+    inc     eax                 ; i = i + 1
+    jmp     .compute_stats_loop_principal   ; vuelve a evaluar la condicion del ciclo
 
-.cs3_empty:
-	xorps   xmm0, xmm0
-    movss   [r12], xmm0
-    movss   [r13], xmm0
-    movss   [r14], xmm0
-    movss   [r15], xmm0
 
-.cs3_ret: ;arreglo de errores
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbp
-    pop     rbx
-    ret
+.compute_stats_loop_final:      ; --- fin del recorrido: escribir resultados finales ---
+    movss   [r14], xmm1         ; *min_ptr = min encontrado
+    movss   [r15], xmm2         ; *max_ptr = max encontrado
+    cvtsi2ss xmm4, ebp          ; vuelve a convertir n a float (xmm4 se pudo haber reusado, se recalcula)
+    divss   xmm5, xmm4          ; var = acumulador_var / n  (varianza poblacional)
+    movss   [r13], xmm5         ; *var_ptr = varianza
+    jmp     .compute_stats_retornar   ; salta al epilogo, saltandose el bloque de "arreglo vacio"
+
+
+
+.compute_stats_arreglo_vacio:   ; --- caso borde: n <= 0, todas las salidas se ponen en 0.0 ---
+    xorps   xmm0, xmm0          ; xmm0 = 0.0
+    movss   [r12], xmm0         ; *mean_ptr = 0.0
+    movss   [r13], xmm0         ; *var_ptr  = 0.0
+    movss   [r14], xmm0         ; *min_ptr  = 0.0
+    movss   [r15], xmm0         ; *max_ptr  = 0.0
+
+.compute_stats_retornar:        ; restaurar registros callee-saved y retornar ---
+    pop     r15                 ; restaura r15 (orden inverso al push)
+    pop     r14                 ; restaura r14
+    pop     r13                 ; restaura r13
+    pop     r12                 ; restaura r12
+    pop     rbp                 ; restaura rbp
+    pop     rbx                 ; restaura rbx
+    ret                         ; retorna a quien llamo a compute_stats
+
 
 ; ---------------------------------------------------------------
 ; void normalize_array(const float *in, float *out, int n,
