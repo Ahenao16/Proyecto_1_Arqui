@@ -202,49 +202,62 @@ compute_stats:
 
 ;-----------funcion normalize array--------------
 ;objetivo de la funcion:normalizar el arreglo de punto flotantes y almacenando datos en un arreglo de salida
+;Asimismo pProducir un arreglo "out" con los valores de "in" normalizados (restando la media y dividiendo entre la desviacion estandar),
+;protegiendo el caso en que la desviacion estandar sea practicamente cero.
+
+;Resumen:
+;1 - Copia mean y stddev (que llegan en xmm0/xmm1) a xmm6/xmm7, registros que no se van a pisar durante los ciclos.
+;2 - Si n <= 0, no hay nada que hacer y retorna de una vez.
+;3 - Si |stddev| < epsilon -> (desviacion estandar) < (cte muy pequeña para saber si es cero), se trata como si stddev fuera 0: entra al ciclo que solamente copia in[i] -> out[i].
+;4 - Entra al ciclo normal que calcula out[i] = (in[i] - mean) / stddev para cada elemento.
+
+
 normalize_array:;---inicio de la funcion
 	movaps xmm6, xmm0 ;xmm6 = mean (fijo todo el ciclo)
 	movaps xmm7, xmm1 ;xmm7 = stddev (fijo todo el ciclo)
 
 	test   edx, edx ;se valida el tamano del arreglo si es menor o igual a 0 salta al final
-	jle    .na2_done
+	jle    .normalize_array_finalizar ; si n <= 0, no hay elementos que procesar -> se debe salir ya
 
 	;division de flotantes para que la desviacion estandar no genere errores
 	;---¿|stddev|< epsilon?
 	movaps  xmm2, xmm7 ;copia desviacion estandar
-	movss   xmm3, [abs_mask];carga de la mascara de bits
+	movss   xmm3, [abs_mask];carga de la mascara de bits (xmm3 = mascara 0x7FFFFFFF (bit de signo en 0)) y abs_mask es una constante de 32 bits (0x7FFFFFFF)
 	andps   xmm2, xmm3   ;xmm2=|sttdev|;se elimina el bit de signo calculando el valor absoluto de la desviacion estandar
 	movss   xmm3, [epsilon] ;se carga un valor epsilon
 	comiss  xmm2, xmm3 ;se compara el valor de la desviacion estandar con epsilon
-	jb  .na2_copy ;|stddev| < epsilon -> se trata como 0 ;si la desviacion estandar es menor a epsilon salta al siguiente ciclo
+	jb  .normalize_array_copia ;|stddev| < epsilon -> se trata como 0 ;si la desviacion estandar es menor a epsilon salta al siguiente ciclo
 
-	xor     eax, eax
+	; ----- caso normal: stddev es distinto de 0
+	xor     eax, eax ; i = 0
 
-.na2_loop: ;inicio del codigo
-    cmp     eax, edx
-    jge     .na2_done
+.normalize_array_loop: ;inicio del codigo - ciclo: out[i] = (in[i] - mean) / stddevv
+    cmp     eax, edx			  ; compara i con n
+    jge     .normalize_array_finalizar  ; si i >= n, termino -> salir
     movss   xmm3, [rdi + rax*4]   ; xmm3 = in[i]
-    subss   xmm3, xmm6            ; x - mean
-    divss   xmm3, xmm7            ; (x - mean) / stddev
+    subss   xmm3, xmm6            ; xmm3 =  in[i] - mean
+    divss   xmm3, xmm7            ; xmm3 = (in[i] - mean) / stddev
     movss   [rsi + rax*4], xmm3   ; out[i] = resultado
-    inc     eax
-    jmp     .na2_loop
+    inc     eax					  ; i = i + 1
+    jmp     .normalize_array_loop ; vuelve a evaluar la condicion del ciclo
 
 ;ciclo de respaldo
+; ----- caso borde: stddev practicamente 0 -> solo copiar in a out
 ;funcion: leer arreglo original en rdi y copiar el valor en el arreglo rsi
-.na2_copy:
-    xor     eax, eax
+.normalize_array_copia:
+    xor     eax, eax  		; i = 0 (se reinicia el indice para este segundo ciclo)
 
-.na2_copy_loop:
-    cmp     eax, edx
-    jge     .na2_done
-    movss   xmm3, [rdi + rax*4]
-    movss   [rsi + rax*4], xmm3
-    inc     eax
-    jmp     .na2_copy_loop
+
+.normalize_array_loop_copia:				; ciclo: out[i] = in[i], sin dividi
+    cmp     eax, edx						; compara i con n
+    jge     .normalize_array_finalizar		; si i >= n, termino -> salir
+    movss   xmm3, [rdi + rax*4]				; xmm3 = in[i]
+    movss   [rsi + rax*4], xmm3				; out[i] = in[i]  (copia directa, sin normalizar)
+    inc     eax								; i = i + 1
+    jmp     .normalize_array_loop_copia		; vuelve a evaluar la condicion del ciclo
 
 ;finalizacion del codigo
-.na2_done:
+.normalize_array_finalizar:
     ret
 
  section .note.GNU-stack noalloc noexec nowrite
